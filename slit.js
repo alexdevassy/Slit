@@ -8,12 +8,69 @@ var walk    = require('walk');
 const FabricCAServices = require('fabric-ca-client');
 const yaml = require('js-yaml');
 const { Wallets } = require('fabric-network');
+const Evilscan = require('evilscan');
+const curl = new (require( 'curl-request' ))();
+
+function opsenum(ip){
+  var cpvalues = [];
+  let ipregex = new RegExp(/^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/);
+  let val = ipregex.test(ip)
+      if (val){
+          const options = {
+            target: ip,
+            //target:'172.18.0.9-172.18.0.8',
+            port:'9050-9055, 9440-9446',
+            status:'TROU', // Timeout, Refused, Open, Unreachable
+            timeout:3000,
+            banner:true,
+            //geo:true
+          };
+  const evilscan = new Evilscan(options);
+  evilscan.on('result', (data) => {
+          if (data.status == "open"){
+                  cpvalues.push(
+                  {
+                          'targetip': data.ip,
+                          'openport': data.port
+                  });
+          }
+  });
+  evilscan.on('error', (err) => {
+      throw err;
+  });
+  evilscan.on('done', () => {
+      console.log("List of open ports observed")
+      console.table(cpvalues);
+      cpvalues.forEach(element => {
+          var URL = "http://"+element.targetip+":"+element.openport+"/version"
+          curl.setHeaders([
+              'user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.94 Safari/537.36'
+          ])
+          .get(URL)
+          .then(({statusCode, body, headers}) => {
+            if(statusCode == 200) {
+                  console.log("Potential HLF service detected at "+element.targetip+":"+element.openport)
+                  console.log(body);
+            }
+      //console.log(statusCode, body, headers)
+          })
+          .catch((e) => {
+            console.log("No potential HLF services were observed at " + element.targetip+":"+element.openport);
+          });
+        });
+  });
+  evilscan.run();
+      }else {
+          console.log('Invalid IP address received'.brightMagenta)
+          DYC();
+      }
+}
 
 function searchenv() {
 let Senvvar = ['PEER', 'ORDERER', 'FABRIC_CFG_PATH', 'CA', 'FABRIC'];
 var envvalues = [];
 //Enumerating env variables
-console.log('Enumerating env variables')
+console.log('List of enumerated env variables')
 var env = process.env;
 Object.keys(env).forEach(function(key) {
   //console.log('Value is' + key + '="' + env[key] +'"');
@@ -180,12 +237,28 @@ inquirer
       type: 'list',
       name: 'Options',
       message: 'Select an Item from below list'.brightYellow,
-      choices: ['Enumerate for HLF environment variables', 'Enumerate for Connection Profiles', 'Attempt connecton to CA server', 'Attempt enrolling default admin user to CA server', 'Exit'],
+      choices: ['Enumerate for exposed HLF nodes', 'Enumerate for HLF environment variables', 'Enumerate for Connection Profiles', 'Attempt connecton to CA server', 'Attempt enrolling default admin user to CA server', 'Exit'],
     },
   ])
   .then(answers => {
         if (answers.Options == "Exit"){
                 process.exit()
+        } else if (answers.Options == "Enumerate for exposed HLF nodes"){
+                inquirer
+                    .prompt([
+                      {
+                        name: 'ipadres',
+                        message: 'Enter target IP address: '
+                      },
+                    ])
+                    .then(answers => {
+                      if (answers.ipadres){
+                        opsenum(answers.ipadres)
+                      } else {
+                        console.log('Invalid IP address received'.brightMagenta)
+                        DYC();
+                      }
+                    });
         } else if (answers.Options == "Enumerate for HLF environment variables"){
                 searchenv();
         } else if (answers.Options == "Enumerate for Connection Profiles"){
