@@ -1,4 +1,3 @@
-var request = require("request"); //requiring request module
 var fs = require('fs');
 var finder = require('findit')(process.argv[2] || '.');
 var path = require('path');
@@ -91,6 +90,176 @@ console.table(envvalues);
 }
 DYC();
 }
+
+function enumcouchdb(){
+  let Senvvar = ['FABRIC_CFG_PATH'];
+  var envvalues = [];
+  console.log('Enumerating for FABRIC_CFG_PATH env variable')
+  let kwords = ['couchDBAddress:', 'stateDatabase:', 'username:', 'password:']
+  var coreylvalues = [];
+  var env = process.env;
+  Object.keys(env).forEach(function(key) {
+    const foundevar = Senvvar.find(v => key.includes(v));
+        if(typeof foundevar !== "undefined")
+        {
+          envvalues.push(
+          {
+            'Environment Variable': key,
+            'Value': env[key]
+          });
+        }
+  });
+  if (envvalues.length === 0) {
+    console.log("No FABRIC_CFG_PATH env variable was observed in system".brightMagenta)
+    inquirer
+        .prompt([
+          {
+            name: 'ipadres',
+            message: 'Enter target IP address: '
+          },
+        ])
+        .then(answers => {
+          if (answers.ipadres){
+            couchdbIP(answers.ipadres)
+          } else {
+            console.log('Invalid IP address received'.brightMagenta)
+            DYC();
+          }
+        });
+  } else {
+    console.table(envvalues);
+    var count = 0;
+    var walker  = walk.walk(envvalues[0].Value, { followLinks: false });
+    walker.on('file', function(root, stat, next) {
+      if (stat.name === 'core.yaml'){
+          console.log('File found at ' + root +'/'+ stat.name)
+          count = count + 1;
+          let file = root+"/"+stat.name;
+          let Rfile = fs.readFileSync(file, "utf8");
+          let arr = Rfile.split(/\r?\n/);
+          arr.forEach((line, idx)=> {
+                  const found = kwords.find(v => line.includes(v));
+                  if(typeof found !== "undefined")
+                  {
+                          coreylvalues.push(
+                          {
+                                  'Parameter_Name': found,
+                                  'Parameter_Value': line.replace(found,'')
+                          });
+                  }
+          });
+      }
+      next();
+    });
+    walker.on("end", function () {
+      if (count === 0 ){
+        console.log('No potential Core.yaml files were observed at FABRIC_CFG_PATH'.brightMagenta, dirpath)
+        inquirer
+            .prompt([
+              {
+                name: 'ipadres',
+                message: 'Enter target IP address: '
+              },
+            ])
+            .then(answers => {
+              if (answers.ipadres){
+                couchdbIP(answers.ipadres)
+              } else {
+                console.log('Invalid IP address received'.brightMagenta)
+                DYC();
+              }
+            });
+      }  else if ((envvalues.length === 1) && (coreylvalues.length != 0)){
+            console.log("Enumerating core.yaml")
+            console.table(coreylvalues);
+            const IP = coreylvalues[1].Parameter_Value.split(":").map(item => item.trim());
+            //console.log('IP address '+ IP[0] + ' port ' + IP[1])
+            couchdbIP(IP[0],IP[1]);
+      }
+      //DYC();
+    });
+  }
+}
+
+function couchdbIP(tip,tport){
+  if (tip != null && tport == null){
+          var cpvalues = [];
+          let ipregex = new RegExp(/^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/);
+          let val = ipregex.test(tip)
+          if (val){
+                  const options = {
+                  target: tip,
+                  //target:'172.18.0.9-172.18.0.8',
+                  port:'5980-5985',
+                  status:'TROU', // Timeout, Refused, Open, Unreachable
+                  timeout:3000,
+                  banner:true,
+                  //geo:true
+          };
+          const evilscan = new Evilscan(options);
+          evilscan.on('result', (data) => {
+                  if (data.status == "open"){
+                          cpvalues.push(
+                          {
+                                  'targetip': data.ip,
+                                  'openport': data.port
+                          });
+                  }
+          });
+          evilscan.on('error', (err) => {
+                  throw err;
+          });
+          evilscan.on('done', () => {
+                  console.log("List of open ports observed")
+                  console.table(cpvalues);
+                  cpvalues.forEach(element => {
+                          var URL = "http://admin:adminpw@"+element.targetip+":"+element.openport+"/_all_dbs"
+                          curl.setHeaders([
+                                  'user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.94 Safari/537.36'
+                          ])
+                          .get(URL)
+                          .then(({statusCode, body, headers}) => {
+                                  if(statusCode == 200) {
+                                          console.log("Vulnerable CouchDB endpoint observed at "+element.targetip+":"+element.openport)
+                                          console.log("Enumerating DB's with default credentials : " + "http://admin:adminpw@"+element.targetip+":"+element.openport+"/_all_dbs")
+                                          console.log(body);
+                                  }
+                                  //console.log(statusCode, body, headers)
+                          })
+                          .catch((e) => {
+                                  console.log("Could not observe vulnerable Couch DB endpoint at " + element.targetip+":"+element.openport);
+                          });
+                  });
+          });
+          evilscan.run();
+          }else {
+                  console.log('Invalid IP address received'.brightMagenta)
+                  DYC();
+          } //closing of (tip != null && tport == null)
+  } else if (tip != null && tport != null){
+          //console.log('recived ' + tip + ' and ' + tport);
+          var URL = "http://admin:adminpw@"+tip+":"+tport+"/_all_dbs"
+          curl.setHeaders([
+                  'user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.94 Safari/537.36'
+          ])
+          .get(URL)
+          .then(({statusCode, body, headers}) => {
+                  if(statusCode == 200) {
+                          console.log("Vulnerable CouchDB endpoint observed at "+tip+":"+tport)
+                          console.log("Enumerating DB's with default credentials : " + "http://admin:adminpw@"+tip+":"+tport+"/_all_dbs")
+                          console.log(body);
+                  }
+                  //console.log(statusCode, body, headers)
+          })
+          .catch((e) => {
+                  console.log("Could not observe vulnerable Couch DB endpoint at " + tip+":"+element.tport);
+          });
+  } else {
+          console.log('Error Courred');
+          DYC();
+  }
+
+} //closing of couchdbIP(tip,tport)
 
 function filewalk(dirpath){
   var cpvalues = [];
@@ -237,7 +406,7 @@ inquirer
       type: 'list',
       name: 'Options',
       message: 'Select an Item from below list'.brightYellow,
-      choices: ['Enumerate for exposed HLF nodes', 'Enumerate for HLF environment variables', 'Enumerate for Connection Profiles', 'Attempt connecton to CA server', 'Attempt enrolling default admin user to CA server', 'Exit'],
+      choices: ['Enumerate for exposed HLF nodes', 'Enumerate for HLF environment variables', 'Enumerate for exposed CouchDB endpoints', 'Enumerate for Connection Profiles', 'Attempt connecton to CA server', 'Attempt enrolling default admin user to CA server', 'Exit'.brightYellow],
     },
   ])
   .then(answers => {
@@ -261,6 +430,8 @@ inquirer
                     });
         } else if (answers.Options == "Enumerate for HLF environment variables"){
                 searchenv();
+        } else if (answers.Options == "Enumerate for exposed CouchDB endpoints"){
+                enumcouchdb()
         } else if (answers.Options == "Enumerate for Connection Profiles"){
                 inquirer
                   .prompt([
