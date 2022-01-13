@@ -1,5 +1,4 @@
 var fs = require('fs');
-var finder = require('findit')(process.argv[2] || '.');
 var path = require('path');
 const colors = require('colors');
 const inquirer = require('inquirer');
@@ -9,6 +8,122 @@ const yaml = require('js-yaml');
 const { Wallets } = require('fabric-network');
 const Evilscan = require('evilscan');
 const curl = new (require( 'curl-request' ))();
+const commander = require('commander');
+
+function ipprompt(){
+  inquirer
+    .prompt([
+      {
+        type: 'list',
+        name: 'Options',
+        message: 'Select a module from below list'.brightYellow,
+        choices: ['Enumerate for exposed HLF nodes', 'Enumerate for HLF environment variables', 'Enumerate for exposed CouchDB endpoints', 'Enumerate for Connection Profiles', 'Attempt connecton to CA server', 'Attempt enrolling default admin user to CA server', 'Exit'.brightYellow],
+      },
+    ])
+    .then(answers => {
+          if (answers.Options == "Exit"){
+                  process.exit()
+          } else if (answers.Options == "Enumerate for exposed HLF nodes"){
+                  inquirer
+                      .prompt([
+                        {
+                          name: 'ipadres',
+                          message: 'Enter target IP address: '
+                        },
+                      ])
+                      .then(answers => {
+                        if (answers.ipadres){
+                          opsenum(answers.ipadres)
+                        } else {
+                          console.log('Invalid IP address received'.brightMagenta)
+                          DYC();
+                        }
+                      });
+          } else if (answers.Options == "Enumerate for HLF environment variables"){
+                  searchenv();
+          } else if (answers.Options == "Enumerate for exposed CouchDB endpoints"){
+                  enumcouchdb()
+          } else if (answers.Options == "Enumerate for Connection Profiles"){
+                  inquirer
+                    .prompt([
+                      {
+                        name: 'dpath',
+                        message: 'Enter target directory path for enumeration (Default value is path to current working directoty): '
+                      },
+                    ])
+                    .then(answers => {
+                      if (answers.dpath){
+                        filewalk(answers.dpath);
+                      } else {
+                        filewalk(__dirname);
+                      }
+                    });
+          } else if (answers.Options == "Attempt connecton to CA server"){
+                  //searchenv();
+                  inquirer
+                    .prompt([
+                      {
+                        name: 'pathcp',
+                        message: 'Enter path to Connection Profile: ',
+                      },
+                    ])
+                    .then(answers => {
+                      if (answers.pathcp){
+                        caconnect(answers.pathcp)
+                        .then(res => {
+                          if (res == "Error"){
+                            console.log("Connection attempt failed".brightMagenta)
+                            DYC();
+                          }else{
+                            //console.log(res)
+                            console.log("Sucessfully connected to CA Server".brightGreen)
+                            DYC();
+                          }
+                        });
+                      } else {
+                        console.log('Invalid path received'.brightMagenta)
+                        DYC();
+                      }
+                    });
+          } else if (answers.Options == "Attempt enrolling default admin user to CA server"){
+          inquirer
+                  .prompt([
+                          {
+                                  name: 'pathcp',
+                                  message: 'Enter path to Connection Profile: ',
+                          },
+                          {
+                                  name: 'mspval',
+                                  message: 'Enter mspvalue',
+                                  //default: '#008f68'
+                          },
+                  ])
+                  .then(answers => {
+                          if (answers.pathcp && answers.mspval){
+                                  caconnect(answers.pathcp)
+                                          .then(res => {
+                                                  if (res == "Error"){
+                                                          console.log("Connection attempt failed".brightMagenta)
+                                                          DYC();
+                                                  }else{
+                                                          //console.log(res)
+                                                          console.log("Sucessfully connected to CA Server".brightGreen)
+                                                          enrollAdmin(res, answers.mspval);
+                                                          //console.log(answers.mspval)
+                                                          //DYC();
+                                                  }
+                                          });
+                          } else {
+                                  console.log('Invalid CP path || mspID received'.brightMagenta)
+                                  DYC();
+                          }
+          });
+
+        } else {
+                  console.info('Bye....:');
+          }
+    });
+}
 
 function opsenum(ip){
   var cpvalues = [];
@@ -337,7 +452,7 @@ inquirer
     {
       type: 'list',
       name: 'adminOptions',
-      message: 'Select an Item from below list',
+      message: 'Select a module from below list'.brightYellow,
       choices: ['Enumerate identities', 'Enumerate affiliations'],
     },
   ])
@@ -383,7 +498,7 @@ inquirer
     {
       type: 'list',
       name: 'DYCOptions',
-      message: 'Do you want to continue?'.brightYellow,
+      message: 'Do you wish to continue with Slit?'.brightYellow,
       choices: ['Yes', 'No'],
     },
   ])
@@ -391,7 +506,7 @@ inquirer
         if (answers.DYCOptions == "No"){
                 process.exit()
         } else if (answers.DYCOptions == "Yes"){
-                main();
+                ipprompt();
         } else {
                 console.info('Answer:', answers.DYCOptions);
         }
@@ -400,118 +515,43 @@ inquirer
 }
 
 function main() {
-inquirer
-  .prompt([
-    {
-      type: 'list',
-      name: 'Options',
-      message: 'Select an Item from below list'.brightYellow,
-      choices: ['Enumerate for exposed HLF nodes', 'Enumerate for HLF environment variables', 'Enumerate for exposed CouchDB endpoints', 'Enumerate for Connection Profiles', 'Attempt connecton to CA server', 'Attempt enrolling default admin user to CA server', 'Exit'.brightYellow],
-    },
-  ])
-  .then(answers => {
-        if (answers.Options == "Exit"){
-                process.exit()
-        } else if (answers.Options == "Enumerate for exposed HLF nodes"){
-                inquirer
-                    .prompt([
-                      {
-                        name: 'ipadres',
-                        message: 'Enter target IP address: '
-                      },
-                    ])
-                    .then(answers => {
-                      if (answers.ipadres){
-                        opsenum(answers.ipadres)
-                      } else {
-                        console.log('Invalid IP address received'.brightMagenta)
-                        DYC();
-                      }
-                    });
-        } else if (answers.Options == "Enumerate for HLF environment variables"){
-                searchenv();
-        } else if (answers.Options == "Enumerate for exposed CouchDB endpoints"){
-                enumcouchdb()
-        } else if (answers.Options == "Enumerate for Connection Profiles"){
-                inquirer
-                  .prompt([
-                    {
-                      name: 'dpath',
-                      message: 'Enter target directory path for enumeration (Default value is path to current working directoty): '
-                    },
-                  ])
-                  .then(answers => {
-                    if (answers.dpath){
-                      filewalk(answers.dpath);
-                    } else {
-                      filewalk(__dirname);
-                    }
-                  });
-        } else if (answers.Options == "Attempt connecton to CA server"){
-                //searchenv();
-                inquirer
-                  .prompt([
-                    {
-                      name: 'pathcp',
-                      message: 'Enter path to Connection Profile: ',
-                    },
-                  ])
-                  .then(answers => {
-                    if (answers.pathcp){
-                      caconnect(answers.pathcp)
-                      .then(res => {
-                        if (res == "Error"){
-                          console.log("Connection attempt failed".brightMagenta)
-                          DYC();
-                        }else{
-                          //console.log(res)
-                          console.log("Sucessfully connected to CA Server".brightGreen)
-                          DYC();
-                        }
-                      });
-                    } else {
-                      console.log('Invalid path received'.brightMagenta)
-                      DYC();
-                    }
-                  });
-        } else if (answers.Options == "Attempt enrolling default admin user to CA server"){
-        inquirer
-                .prompt([
-                        {
-                                name: 'pathcp',
-                                message: 'Enter path to Connection Profile: ',
-                        },
-                        {
-                                name: 'mspval',
-                                message: 'Enter mspvalue',
-                                //default: '#008f68'
-                        },
-                ])
-                .then(answers => {
-                        if (answers.pathcp && answers.mspval){
-                                caconnect(answers.pathcp)
-                                        .then(res => {
-                                                if (res == "Error"){
-                                                        console.log("Connection attempt failed".brightMagenta)
-                                                        DYC();
-                                                }else{
-                                                        //console.log(res)
-                                                        console.log("Sucessfully connected to CA Server".brightGreen)
-                                                        enrollAdmin(res, answers.mspval);
-                                                        //console.log(answers.mspval)
-                                                        //DYC();
-                                                }
-                                        });
-                        } else {
-                                console.log('Invalid CP path || mspID received'.brightMagenta)
-                                DYC();
-                        }
-        });
 
-        } else {
-                console.info('Answer:', answers.Options);
-        }
-  });
+  console.log(" ")
+  console.log("  \u2588\u2588\u2588\u2588\u2588\u2588  \u2588\u2588\u2593     \u2588\u2588\u2593\u2584\u2584\u2584\u2588\u2588\u2588\u2588\u2588\u2593\r\n\u2592\u2588\u2588    \u2592 \u2593\u2588\u2588\u2592    \u2593\u2588\u2588\u2592\u2593  \u2588\u2588\u2592 \u2593\u2592\r\n\u2591 \u2593\u2588\u2588\u2584   \u2592\u2588\u2588\u2591    \u2592\u2588\u2588\u2592\u2592 \u2593\u2588\u2588\u2591 \u2592\u2591\r\n  \u2592   \u2588\u2588\u2592\u2592\u2588\u2588\u2591    \u2591\u2588\u2588\u2591\u2591 \u2593\u2588\u2588\u2593 \u2591 \r\n\u2592\u2588\u2588\u2588\u2588\u2588\u2588\u2592\u2592\u2591\u2588\u2588\u2588\u2588\u2588\u2588\u2592\u2591\u2588\u2588\u2591  \u2592\u2588\u2588\u2592 \u2591 \r\n\u2592 \u2592\u2593\u2592 \u2592 \u2591\u2591 \u2592\u2591\u2593  \u2591\u2591\u2593    \u2592 \u2591\u2591   \r\n\u2591 \u2591\u2592  \u2591 \u2591\u2591 \u2591 \u2592  \u2591 \u2592 \u2591    \u2591    \r\n\u2591  \u2591  \u2591    \u2591 \u2591    \u2592 \u2591  \u2591      \r\n      \u2591      \u2591  \u2591 \u2591           \r\n                              ".brightBlue)
+
+  commander
+    .version('Version: 1.0', '-v, --version', 'Output the version number'.brightCyan)
+    .name("node slit.js")
+    .usage('[OPTIONS]...')
+    .option('-d, --description', 'Get to know Slit'.brightCyan)
+    .option('-l, --list', 'List modules in Slit'.brightCyan)
+    //.option('-h, --help', 'List options')
+    .helpOption('-h, --HELP', 'Display HELP information'.brightCyan)
+    .option('-r, --run', 'Run Slit'.brightCyan)
+    .parse(process.argv);
+
+    const options = commander.opts();
+
+    if (options.description){
+      console.log('Description:')
+      console.log("\"Slit\" is an interactive CLI build in node js which serves\nas an \"Interface\", \"Enumeration\" and \"Dissecting\" tool for\nexploiting Hyperledger Fabric. \"Slit\" is intended to be\nused as a red teaming tool at the infrastructure layer.\n\"Slit\" is designed with the primary aim to decrease the\nknowledge gap b/w a security researcher and a fabric domain\nexpert.".brightCyan);
+      DYC();
+    }else if (options.list){
+      console.log('Modules List:\n> Enumerate for exposed Hyperledger Fabric (HLF) nodes\n\t> Enter target IP address\n> Enumerate for HLF environment variables\n> Enumerate for exposed CouchDB endpoints\n\t> Enumerate environment variables\n\t> Enter target IP address\n> Enumerate for Connection Profiles\n\t> Enter target directory path for enumeration (Default value is cwd)\n> Attempt connecton to CA server\n\t> Enter path to Connection Profile\n> Attempt enrolling default admin user to CA server\n\t> Enter path to Connection Profile\n\t> Enter MSPvalue\n\t\t> Enumerate Affiliations\n\t\t> Enumerate Identities'.brightCyan);
+      DYC();
+    }else if (options.run){
+      //console.log('Modules List: Comming Soon');
+      ipprompt();
+    }else {
+      //console.log('Modules List: Comming Soon');
+      //console.log("Incorrect Flag provided")
+      ipprompt();
+    }
+
+    //const flag = (options.flag ? 'Flag is present.' : 'Flag is not present.');
+    //console.log('Flag:', `${flag}`);
+    //console.log('Custom:', `${options.custom}`);
+
 }
 if (require.main === module) {
   main();
